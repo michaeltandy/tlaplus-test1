@@ -18,14 +18,18 @@
 <stringAttribute key="modelBehaviorNext" value=""/>
 <stringAttribute key="modelBehaviorSpec" value="Spec"/>
 <intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="bob_account, money, alice_account, stack, money_, pc, account_total"/>
+<stringAttribute key="modelBehaviorVars" value="S, pc"/>
 <stringAttribute key="modelComments" value=""/>
-<booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
+<booleanAttribute key="modelCorrectnessCheckDeadlock" value="false"/>
 <listAttribute key="modelCorrectnessInvariants"/>
-<listAttribute key="modelCorrectnessProperties"/>
+<listAttribute key="modelCorrectnessProperties">
+<listEntry value="1&lt;&gt;(pc[&quot;SendPing&quot;]=&quot;Done&quot; /\ pc[&quot;PingToPong&quot;]=&quot;Done&quot;)"/>
+</listAttribute>
 <stringAttribute key="modelExpressionEval" value=""/>
 <stringAttribute key="modelParameterActionConstraint" value=""/>
-<listAttribute key="modelParameterConstants"/>
+<listAttribute key="modelParameterConstants">
+<listEntry value="LossyChannel;;FALSE;0;0"/>
+</listAttribute>
 <stringAttribute key="modelParameterContraint" value=""/>
 <listAttribute key="modelParameterDefinitions"/>
 <stringAttribute key="modelParameterModelValues" value="{}"/>
