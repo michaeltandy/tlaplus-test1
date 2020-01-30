@@ -4,154 +4,122 @@ EXTENDS Naturals, TLC, Integers, Sequences, FiniteSets
 
 (* --algorithm transfer
 
-variables channelA_in = 0, channelA_out = 0,
-channelB_in = 0, channelB_out = 0;
+variable S = [a |-> [in |-> 0, out |-> 0], b |-> [in |-> 0, out |-> 0]];
 
-process ChannelA = "ChanA"
+define
+  fwChan(p) == IF p = "ChanA" THEN "a" ELSE "b"
+  txChan(p) == IF p = "SendPing" THEN "a" ELSE "b"
+  rxChan(p) == IF p = "SendPing" THEN "b" ELSE "a"
+end define;
+
+process ChannelA \in {"ChanA", "ChanB"}
 begin LoopChA:
   while TRUE do
-   A: assert channelA_out = 0;
-      await channelA_in /= 0;
+   A: assert S[fwChan(self)].in = 0;
+      await S[fwChan(self)].in /= 0;
         either
           \* Message successfully delivered 
-          channelA_out := channelA_in;
-          channelA_in := 0;
+          S[fwChan(self)].out := S[fwChan(self)].in || S[fwChan(self)].in := 0;
         or
           \* Message lost in transit
-          channelA_in := 0;
+          S[fwChan(self)].in := 0;
         end either;
-   B: await channelA_out = 0;
+   B: await S[fwChan(self)].out = 0;
   end while;
 end process;
 
-process ChannelB = "ChanB"
-begin LoopChB:
-  while TRUE do
-   A: assert channelB_out = 0;
-      await channelB_in /= 0;
-          channelB_out := channelB_in;
-          channelB_in := 0;
-   B: await channelB_out = 0;
-  end while;
-end process;
-
-process SendPing = "SendPing"
+process SendPing \in { "SendPing" }
 begin
-  Send: channelA_in := 123;
-  Wait: await (channelB_out /= 0);
-        assert channelB_out = 321;
+  Send: S[txChan(self)].in := 123;
+  Wait: await (S[rxChan(self)].out /= 0);
+        assert S[rxChan(self)].out = 321;
 end process
 
-process PingToPong = "PingToPong"
+process PingToPong \in { "PingToPong" }
 begin
-  AwaitPing: await (channelA_out /= 0);
-             assert channelA_out = 123;
-  SendPong: channelB_in := 321;
+  AwaitPing: await (S[rxChan(self)].out /= 0);
+             assert S[rxChan(self)].out = 123;
+  SendPong: S[txChan(self)].in := 321;
 end process
 
 end algorithm *)
 
 \* BEGIN TRANSLATION
-\* Label A of process ChannelA at line 13 col 7 changed to A_
-\* Label B of process ChannelA at line 23 col 7 changed to B_
-VARIABLES channelA_in, channelA_out, channelB_in, channelB_out, pc
+VARIABLES S, pc
 
-vars == << channelA_in, channelA_out, channelB_in, channelB_out, pc >>
+(* define statement *)
+fwChan(p) == IF p = "ChanA" THEN "a" ELSE "b"
+txChan(p) == IF p = "SendPing" THEN "a" ELSE "b"
+rxChan(p) == IF p = "SendPing" THEN "b" ELSE "a"
 
-ProcSet == {"ChanA"} \cup {"ChanB"} \cup {"SendPing"} \cup {"PingToPong"}
+
+vars == << S, pc >>
+
+ProcSet == ({"ChanA", "ChanB"}) \cup ({ "SendPing" }) \cup ({ "PingToPong" })
 
 Init == (* Global variables *)
-        /\ channelA_in = 0
-        /\ channelA_out = 0
-        /\ channelB_in = 0
-        /\ channelB_out = 0
-        /\ pc = [self \in ProcSet |-> CASE self = "ChanA" -> "LoopChA"
-                                        [] self = "ChanB" -> "LoopChB"
-                                        [] self = "SendPing" -> "Send"
-                                        [] self = "PingToPong" -> "AwaitPing"]
+        /\ S = [a |-> [in |-> 0, out |-> 0], b |-> [in |-> 0, out |-> 0]]
+        /\ pc = [self \in ProcSet |-> CASE self \in {"ChanA", "ChanB"} -> "LoopChA"
+                                        [] self \in { "SendPing" } -> "Send"
+                                        [] self \in { "PingToPong" } -> "AwaitPing"]
 
-LoopChA == /\ pc["ChanA"] = "LoopChA"
-           /\ pc' = [pc EXCEPT !["ChanA"] = "A_"]
-           /\ UNCHANGED << channelA_in, channelA_out, channelB_in, 
-                           channelB_out >>
+LoopChA(self) == /\ pc[self] = "LoopChA"
+                 /\ pc' = [pc EXCEPT ![self] = "A"]
+                 /\ S' = S
 
-A_ == /\ pc["ChanA"] = "A_"
-      /\ Assert(channelA_out = 0, 
-                "Failure of assertion at line 13, column 7.")
-      /\ channelA_in /= 0
-      /\ \/ /\ channelA_out' = channelA_in
-            /\ channelA_in' = 0
-         \/ /\ channelA_in' = 0
-            /\ UNCHANGED channelA_out
-      /\ pc' = [pc EXCEPT !["ChanA"] = "B_"]
-      /\ UNCHANGED << channelB_in, channelB_out >>
+A(self) == /\ pc[self] = "A"
+           /\ Assert(S[fwChan(self)].in = 0, 
+                     "Failure of assertion at line 18, column 7.")
+           /\ S[fwChan(self)].in /= 0
+           /\ \/ /\ S' = [S EXCEPT ![fwChan(self)].out = S[fwChan(self)].in,
+                                   ![fwChan(self)].in = 0]
+              \/ /\ S' = [S EXCEPT ![fwChan(self)].in = 0]
+           /\ pc' = [pc EXCEPT ![self] = "B"]
 
-B_ == /\ pc["ChanA"] = "B_"
-      /\ channelA_out = 0
-      /\ pc' = [pc EXCEPT !["ChanA"] = "LoopChA"]
-      /\ UNCHANGED << channelA_in, channelA_out, channelB_in, channelB_out >>
+B(self) == /\ pc[self] = "B"
+           /\ S[fwChan(self)].out = 0
+           /\ pc' = [pc EXCEPT ![self] = "LoopChA"]
+           /\ S' = S
 
-ChannelA == LoopChA \/ A_ \/ B_
+ChannelA(self) == LoopChA(self) \/ A(self) \/ B(self)
 
-LoopChB == /\ pc["ChanB"] = "LoopChB"
-           /\ pc' = [pc EXCEPT !["ChanB"] = "A"]
-           /\ UNCHANGED << channelA_in, channelA_out, channelB_in, 
-                           channelB_out >>
+Send(self) == /\ pc[self] = "Send"
+              /\ S' = [S EXCEPT ![txChan(self)].in = 123]
+              /\ pc' = [pc EXCEPT ![self] = "Wait"]
 
-A == /\ pc["ChanB"] = "A"
-     /\ Assert(channelB_out = 0, 
-               "Failure of assertion at line 30, column 7.")
-     /\ channelB_in /= 0
-     /\ channelB_out' = channelB_in
-     /\ channelB_in' = 0
-     /\ pc' = [pc EXCEPT !["ChanB"] = "B"]
-     /\ UNCHANGED << channelA_in, channelA_out >>
+Wait(self) == /\ pc[self] = "Wait"
+              /\ (S[rxChan(self)].out /= 0)
+              /\ Assert(S[rxChan(self)].out = 321, 
+                        "Failure of assertion at line 35, column 9.")
+              /\ pc' = [pc EXCEPT ![self] = "Done"]
+              /\ S' = S
 
-B == /\ pc["ChanB"] = "B"
-     /\ channelB_out = 0
-     /\ pc' = [pc EXCEPT !["ChanB"] = "LoopChB"]
-     /\ UNCHANGED << channelA_in, channelA_out, channelB_in, channelB_out >>
+SendPing(self) == Send(self) \/ Wait(self)
 
-ChannelB == LoopChB \/ A \/ B
+AwaitPing(self) == /\ pc[self] = "AwaitPing"
+                   /\ (S[rxChan(self)].out /= 0)
+                   /\ Assert(S[rxChan(self)].out = 123, 
+                             "Failure of assertion at line 41, column 14.")
+                   /\ pc' = [pc EXCEPT ![self] = "SendPong"]
+                   /\ S' = S
 
-Send == /\ pc["SendPing"] = "Send"
-        /\ channelA_in' = 123
-        /\ pc' = [pc EXCEPT !["SendPing"] = "Wait"]
-        /\ UNCHANGED << channelA_out, channelB_in, channelB_out >>
+SendPong(self) == /\ pc[self] = "SendPong"
+                  /\ S' = [S EXCEPT ![txChan(self)].in = 321]
+                  /\ pc' = [pc EXCEPT ![self] = "Done"]
 
-Wait == /\ pc["SendPing"] = "Wait"
-        /\ (channelB_out /= 0)
-        /\ Assert(channelB_out = 321, 
-                  "Failure of assertion at line 42, column 9.")
-        /\ pc' = [pc EXCEPT !["SendPing"] = "Done"]
-        /\ UNCHANGED << channelA_in, channelA_out, channelB_in, channelB_out >>
+PingToPong(self) == AwaitPing(self) \/ SendPong(self)
 
-SendPing == Send \/ Wait
-
-AwaitPing == /\ pc["PingToPong"] = "AwaitPing"
-             /\ (channelA_out /= 0)
-             /\ Assert(channelA_out = 123, 
-                       "Failure of assertion at line 48, column 14.")
-             /\ pc' = [pc EXCEPT !["PingToPong"] = "SendPong"]
-             /\ UNCHANGED << channelA_in, channelA_out, channelB_in, 
-                             channelB_out >>
-
-SendPong == /\ pc["PingToPong"] = "SendPong"
-            /\ channelB_in' = 321
-            /\ pc' = [pc EXCEPT !["PingToPong"] = "Done"]
-            /\ UNCHANGED << channelA_in, channelA_out, channelB_out >>
-
-PingToPong == AwaitPing \/ SendPong
-
-Next == ChannelA \/ ChannelB \/ SendPing \/ PingToPong
+Next == (\E self \in {"ChanA", "ChanB"}: ChannelA(self))
+           \/ (\E self \in { "SendPing" }: SendPing(self))
+           \/ (\E self \in { "PingToPong" }: PingToPong(self))
 
 Spec == Init /\ [][Next]_vars
 
 \* END TRANSLATION
 
-ChannelInvariant == (channelA_in = 0 \/ channelA_out = 0) /\ (channelB_in = 0 \/ channelB_out = 0)
+ChannelInvariant == (S.a.in = 0 \/ S.a.out = 0) /\ (S.b.in = 0 \/ S.b.out = 0)
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Jan 30 21:07:13 GMT 2020 by mtandy
+\* Last modified Thu Jan 30 22:15:44 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
