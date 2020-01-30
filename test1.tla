@@ -7,7 +7,7 @@ EXTENDS Naturals, TLC, Integers, Sequences, FiniteSets
 variables channelA_in = 0, channelA_out = 0,
 channelB_in = 0, channelB_out = 0;
 
-process ChannelA = 0
+process ChannelA = "ChanA"
 begin LoopChA:
   while TRUE do
    A: assert channelA_out = 0;
@@ -24,7 +24,7 @@ begin LoopChA:
   end while;
 end process;
 
-process ChannelB = 0
+process ChannelB = "ChanB"
 begin LoopChB:
   while TRUE do
    A: assert channelB_out = 0;
@@ -35,14 +35,14 @@ begin LoopChB:
   end while;
 end process;
 
-process SendPing = 1
+process SendPing = "SendPing"
 begin
   Send: channelA_in := 123;
   Wait: await (channelB_out /= 0);
         assert channelB_out = 321;
 end process
 
-process PingToPong = 2
+process PingToPong = "PingToPong"
 begin
   AwaitPing: await (channelA_out /= 0);
              assert channelA_out = 123;
@@ -58,24 +58,24 @@ VARIABLES channelA_in, channelA_out, channelB_in, channelB_out, pc
 
 vars == << channelA_in, channelA_out, channelB_in, channelB_out, pc >>
 
-ProcSet == {0} \cup {0} \cup {1} \cup {2}
+ProcSet == {"ChanA"} \cup {"ChanB"} \cup {"SendPing"} \cup {"PingToPong"}
 
 Init == (* Global variables *)
         /\ channelA_in = 0
         /\ channelA_out = 0
         /\ channelB_in = 0
         /\ channelB_out = 0
-        /\ pc = [self \in ProcSet |-> CASE self = 0 -> "LoopChA"
-                                        [] self = 0 -> "LoopChB"
-                                        [] self = 1 -> "Send"
-                                        [] self = 2 -> "AwaitPing"]
+        /\ pc = [self \in ProcSet |-> CASE self = "ChanA" -> "LoopChA"
+                                        [] self = "ChanB" -> "LoopChB"
+                                        [] self = "SendPing" -> "Send"
+                                        [] self = "PingToPong" -> "AwaitPing"]
 
-LoopChA == /\ pc[0] = "LoopChA"
-           /\ pc' = [pc EXCEPT ![0] = "A_"]
+LoopChA == /\ pc["ChanA"] = "LoopChA"
+           /\ pc' = [pc EXCEPT !["ChanA"] = "A_"]
            /\ UNCHANGED << channelA_in, channelA_out, channelB_in, 
                            channelB_out >>
 
-A_ == /\ pc[0] = "A_"
+A_ == /\ pc["ChanA"] = "A_"
       /\ Assert(channelA_out = 0, 
                 "Failure of assertion at line 13, column 7.")
       /\ channelA_in /= 0
@@ -83,62 +83,62 @@ A_ == /\ pc[0] = "A_"
             /\ channelA_in' = 0
          \/ /\ channelA_in' = 0
             /\ UNCHANGED channelA_out
-      /\ pc' = [pc EXCEPT ![0] = "B_"]
+      /\ pc' = [pc EXCEPT !["ChanA"] = "B_"]
       /\ UNCHANGED << channelB_in, channelB_out >>
 
-B_ == /\ pc[0] = "B_"
+B_ == /\ pc["ChanA"] = "B_"
       /\ channelA_out = 0
-      /\ pc' = [pc EXCEPT ![0] = "LoopChA"]
+      /\ pc' = [pc EXCEPT !["ChanA"] = "LoopChA"]
       /\ UNCHANGED << channelA_in, channelA_out, channelB_in, channelB_out >>
 
 ChannelA == LoopChA \/ A_ \/ B_
 
-LoopChB == /\ pc[0] = "LoopChB"
-           /\ pc' = [pc EXCEPT ![0] = "A"]
+LoopChB == /\ pc["ChanB"] = "LoopChB"
+           /\ pc' = [pc EXCEPT !["ChanB"] = "A"]
            /\ UNCHANGED << channelA_in, channelA_out, channelB_in, 
                            channelB_out >>
 
-A == /\ pc[0] = "A"
+A == /\ pc["ChanB"] = "A"
      /\ Assert(channelB_out = 0, 
                "Failure of assertion at line 30, column 7.")
      /\ channelB_in /= 0
      /\ channelB_out' = channelB_in
      /\ channelB_in' = 0
-     /\ pc' = [pc EXCEPT ![0] = "B"]
+     /\ pc' = [pc EXCEPT !["ChanB"] = "B"]
      /\ UNCHANGED << channelA_in, channelA_out >>
 
-B == /\ pc[0] = "B"
+B == /\ pc["ChanB"] = "B"
      /\ channelB_out = 0
-     /\ pc' = [pc EXCEPT ![0] = "LoopChB"]
+     /\ pc' = [pc EXCEPT !["ChanB"] = "LoopChB"]
      /\ UNCHANGED << channelA_in, channelA_out, channelB_in, channelB_out >>
 
 ChannelB == LoopChB \/ A \/ B
 
-Send == /\ pc[1] = "Send"
+Send == /\ pc["SendPing"] = "Send"
         /\ channelA_in' = 123
-        /\ pc' = [pc EXCEPT ![1] = "Wait"]
+        /\ pc' = [pc EXCEPT !["SendPing"] = "Wait"]
         /\ UNCHANGED << channelA_out, channelB_in, channelB_out >>
 
-Wait == /\ pc[1] = "Wait"
+Wait == /\ pc["SendPing"] = "Wait"
         /\ (channelB_out /= 0)
         /\ Assert(channelB_out = 321, 
                   "Failure of assertion at line 42, column 9.")
-        /\ pc' = [pc EXCEPT ![1] = "Done"]
+        /\ pc' = [pc EXCEPT !["SendPing"] = "Done"]
         /\ UNCHANGED << channelA_in, channelA_out, channelB_in, channelB_out >>
 
 SendPing == Send \/ Wait
 
-AwaitPing == /\ pc[2] = "AwaitPing"
+AwaitPing == /\ pc["PingToPong"] = "AwaitPing"
              /\ (channelA_out /= 0)
              /\ Assert(channelA_out = 123, 
                        "Failure of assertion at line 48, column 14.")
-             /\ pc' = [pc EXCEPT ![2] = "SendPong"]
+             /\ pc' = [pc EXCEPT !["PingToPong"] = "SendPong"]
              /\ UNCHANGED << channelA_in, channelA_out, channelB_in, 
                              channelB_out >>
 
-SendPong == /\ pc[2] = "SendPong"
+SendPong == /\ pc["PingToPong"] = "SendPong"
             /\ channelB_in' = 321
-            /\ pc' = [pc EXCEPT ![2] = "Done"]
+            /\ pc' = [pc EXCEPT !["PingToPong"] = "Done"]
             /\ UNCHANGED << channelA_in, channelA_out, channelB_out >>
 
 PingToPong == AwaitPing \/ SendPong
@@ -153,5 +153,5 @@ ChannelInvariant == (channelA_in = 0 \/ channelA_out = 0) /\ (channelB_in = 0 \/
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Jan 30 20:34:47 GMT 2020 by mtandy
+\* Last modified Thu Jan 30 21:07:13 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
