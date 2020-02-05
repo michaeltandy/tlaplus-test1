@@ -21,9 +21,11 @@
 <stringAttribute key="modelBehaviorVars" value="droppedMessageRun, S, Timer, pc"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="false"/>
-<listAttribute key="modelCorrectnessInvariants"/>
+<listAttribute key="modelCorrectnessInvariants">
+<listEntry value="0ChannelInvariant"/>
+</listAttribute>
 <listAttribute key="modelCorrectnessProperties">
-<listEntry value="1&lt;&gt;(pc[&quot;SendPing&quot;]=&quot;Done&quot; /\ pc[&quot;PingToPong&quot;]=&quot;Done&quot;)"/>
+<listEntry value="1&lt;&gt;ProgramFinished"/>
 </listAttribute>
 <stringAttribute key="modelExpressionEval" value=""/>
 <stringAttribute key="modelParameterActionConstraint" value=""/>

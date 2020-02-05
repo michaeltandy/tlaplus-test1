@@ -76,11 +76,15 @@ begin
 end process
 
 fair process PingToPong \in { "PingToPong" }
-begin
-  AwaitPing: await (receive(self) /= 0);
-             assert receive(self) = 123;
-  SendPong: transmit(321);
-  AfterPong: S[rxChan(self)].out := 0;
+begin Qwer:
+  while TRUE do
+    AwaitPing: await (receive(self) /= 0);
+               assert receive(self) = 123;
+               transmit(321);
+    AfterPong: S[rxChan(self)].out := 0;
+               Timer[self] := -1;
+    AwaitSend: await (S[txChan(self)].in = 0);
+  end while
 end process
 
 end algorithm *)
@@ -110,7 +114,7 @@ Init == (* Global variables *)
         /\ pc = [self \in ProcSet |-> CASE self \in {"TimerTick"} -> "TimerTick_"
                                         [] self \in {"ChanA", "ChanB"} -> "ChanSim_"
                                         [] self \in { "SendPing" } -> "Send"
-                                        [] self \in { "PingToPong" } -> "AwaitPing"]
+                                        [] self \in { "PingToPong" } -> "Qwer"]
 
 TimerTick_(self) == /\ pc[self] = "TimerTick_"
                     /\ pc' = [pc EXCEPT ![self] = "TT"]
@@ -179,28 +183,35 @@ Wait(self) == /\ pc[self] = "Wait"
 
 SendPing(self) == Send(self) \/ Wait(self)
 
+Qwer(self) == /\ pc[self] = "Qwer"
+              /\ pc' = [pc EXCEPT ![self] = "AwaitPing"]
+              /\ UNCHANGED << S, Timer, droppedMessageRun >>
+
 AwaitPing(self) == /\ pc[self] = "AwaitPing"
                    /\ (receive(self) /= 0)
                    /\ Assert(receive(self) = 123, 
-                             "Failure of assertion at line 81, column 14.")
-                   /\ pc' = [pc EXCEPT ![self] = "SendPong"]
-                   /\ UNCHANGED << S, Timer, droppedMessageRun >>
-
-SendPong(self) == /\ pc[self] = "SendPong"
-                  /\ Assert(S[txChan(self)].in = 0, 
-                            "Failure of assertion at line 20, column 5 of macro called at line 82, column 13.")
-                  /\ S' = [S EXCEPT ![txChan(self)].in = 321]
-                  /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
-                                            ![self] = 10]
-                  /\ pc' = [pc EXCEPT ![self] = "AfterPong"]
-                  /\ UNCHANGED droppedMessageRun
+                             "Failure of assertion at line 82, column 16.")
+                   /\ Assert(S[txChan(self)].in = 0, 
+                             "Failure of assertion at line 20, column 5 of macro called at line 83, column 16.")
+                   /\ S' = [S EXCEPT ![txChan(self)].in = 321]
+                   /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
+                                             ![self] = 10]
+                   /\ pc' = [pc EXCEPT ![self] = "AfterPong"]
+                   /\ UNCHANGED droppedMessageRun
 
 AfterPong(self) == /\ pc[self] = "AfterPong"
                    /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
-                   /\ pc' = [pc EXCEPT ![self] = "Done"]
-                   /\ UNCHANGED << Timer, droppedMessageRun >>
+                   /\ Timer' = [Timer EXCEPT ![self] = -1]
+                   /\ pc' = [pc EXCEPT ![self] = "AwaitSend"]
+                   /\ UNCHANGED droppedMessageRun
 
-PingToPong(self) == AwaitPing(self) \/ SendPong(self) \/ AfterPong(self)
+AwaitSend(self) == /\ pc[self] = "AwaitSend"
+                   /\ (S[txChan(self)].in = 0)
+                   /\ pc' = [pc EXCEPT ![self] = "Qwer"]
+                   /\ UNCHANGED << S, Timer, droppedMessageRun >>
+
+PingToPong(self) == Qwer(self) \/ AwaitPing(self) \/ AfterPong(self)
+                       \/ AwaitSend(self)
 
 Next == (\E self \in {"TimerTick"}: TimerTick(self))
            \/ (\E self \in {"ChanA", "ChanB"}: ChanSim(self))
@@ -217,7 +228,10 @@ Spec == /\ Init /\ [][Next]_vars
 
 ChannelInvariant == (S.a.in = 0 \/ S.a.out = 0) /\ (S.b.in = 0 \/ S.b.out = 0)
 
+\*ProgramFinished == pc["SendPing"]="Done" /\ pc["PingToPong"]="Done"
+ProgramFinished == pc["SendPing"]="Done"
+
 =============================================================================
 \* Modification History
-\* Last modified Wed Feb 05 21:43:44 GMT 2020 by mtandy
+\* Last modified Wed Feb 05 22:45:25 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
