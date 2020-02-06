@@ -25,26 +25,25 @@ macro transmit(toTx) begin
     Timer[txChan(self)] := 2 || Timer[self] := 10;
 end macro;
 
-fair process TimerTick \in {"TimerTick"}
+(*fair process TimerTick \in {"TimerTick"}
 begin TimerTick:
-  while TRUE do
-   TT: await (~\E x \in DOMAIN Timer : Timer[x] = 0);
+  \*while TRUE do
+       await (~\E x \in DOMAIN Timer : Timer[x] = 0);
        await (\E x \in DOMAIN Timer : Timer[x] > 0);
        Timer["a"] := IF Timer["a"]>0 THEN Timer["a"]-1 ELSE Timer["a"] || Timer["b"] := IF Timer["b"]>0 THEN Timer["b"]-1 ELSE Timer["b"] || Timer["SendPing"] := IF Timer["SendPing"]>0 THEN Timer["SendPing"]-1 ELSE Timer["SendPing"] || Timer["PingToPong"] := IF Timer["PingToPong"]>0 THEN Timer["PingToPong"]-1 ELSE Timer["PingToPong"];
+       goto TimerTick;
        \*with t \in DOMAIN Timer do
        \*  if Timer[t] > 0 then
        \*    Timer[t] := Timer[t]-1;
        \*  end if; 
        \*end with;
-  end while;
-end process;
+  \*end while;
+end process;*)
 
 fair process ChanSim \in {"ChanA", "ChanB"}
   variables droppedMessageRun = 0;
 begin ChanSim:
-  while TRUE do
-   A: assert S[fwChan(self)].out = 0;
-      await S[fwChan(self)].in /= 0;
+      await (S[fwChan(self)].in /= 0 /\ S[fwChan(self)].out = 0);
         if droppedMessageRun < MaxDroppedMessageRun then
           either
             \* Message successfully delivered 
@@ -61,8 +60,7 @@ begin ChanSim:
           S[fwChan(self)].out := S[fwChan(self)].in || S[fwChan(self)].in := 0;
         end if;
         Timer[fwChan(self)] := -1;
-   B: await S[fwChan(self)].out = 0;
-  end while;
+   goto ChanSim;
 end process;
 
 fair process AckedChannel \in { "SendPing", "PingToPong" }
@@ -101,11 +99,11 @@ begin InitChannel:
       elsif (receive(self) = message) then
           S[rxChan(self)].out := 0;
           ackDue := TRUE;
+          goto TransmittingData;
       elsif (S[txChan(self)].in = 0) then
           if ackDue then
               ackDue := FALSE;
               transmit(ack);
-           t3: S[rxChan(self)].out := 0;
               goto TransmittingAckAwaitingAck;
           else
               goto AwaitingAck;
@@ -145,8 +143,7 @@ end process
 end algorithm *)
 
 \* BEGIN TRANSLATION
-\* Label TimerTick of process TimerTick at line 30 col 3 changed to TimerTick_
-\* Label ChanSim of process ChanSim at line 45 col 3 changed to ChanSim_
+\* Label ChanSim of process ChanSim at line 46 col 7 changed to ChanSim_
 VARIABLES S, Timer, pc
 
 (* define statement *)
@@ -162,7 +159,7 @@ VARIABLES droppedMessageRun, ackDue
 
 vars == << S, Timer, pc, droppedMessageRun, ackDue >>
 
-ProcSet == ({"TimerTick"}) \cup ({"ChanA", "ChanB"}) \cup ({ "SendPing", "PingToPong" })
+ProcSet == ({"ChanA", "ChanB"}) \cup ({ "SendPing", "PingToPong" })
 
 Init == (* Global variables *)
         /\ S = [a |-> [in |-> 0, out |-> 0], b |-> [in |-> 0, out |-> 0]]
@@ -171,57 +168,29 @@ Init == (* Global variables *)
         /\ droppedMessageRun = [self \in {"ChanA", "ChanB"} |-> 0]
         (* Process AckedChannel *)
         /\ ackDue = [self \in { "SendPing", "PingToPong" } |-> FALSE]
-        /\ pc = [self \in ProcSet |-> CASE self \in {"TimerTick"} -> "TimerTick_"
-                                        [] self \in {"ChanA", "ChanB"} -> "ChanSim_"
+        /\ pc = [self \in ProcSet |-> CASE self \in {"ChanA", "ChanB"} -> "ChanSim_"
                                         [] self \in { "SendPing", "PingToPong" } -> "InitChannel"]
 
-TimerTick_(self) == /\ pc[self] = "TimerTick_"
-                    /\ pc' = [pc EXCEPT ![self] = "TT"]
-                    /\ UNCHANGED << S, Timer, droppedMessageRun, ackDue >>
-
-TT(self) == /\ pc[self] = "TT"
-            /\ (~\E x \in DOMAIN Timer : Timer[x] = 0)
-            /\ (\E x \in DOMAIN Timer : Timer[x] > 0)
-            /\ Timer' = [Timer EXCEPT !["a"] = IF Timer["a"]>0 THEN Timer["a"]-1 ELSE Timer["a"],
-                                      !["b"] = IF Timer["b"]>0 THEN Timer["b"]-1 ELSE Timer["b"],
-                                      !["SendPing"] = IF Timer["SendPing"]>0 THEN Timer["SendPing"]-1 ELSE Timer["SendPing"],
-                                      !["PingToPong"] = IF Timer["PingToPong"]>0 THEN Timer["PingToPong"]-1 ELSE Timer["PingToPong"]]
-            /\ pc' = [pc EXCEPT ![self] = "TimerTick_"]
-            /\ UNCHANGED << S, droppedMessageRun, ackDue >>
-
-TimerTick(self) == TimerTick_(self) \/ TT(self)
-
 ChanSim_(self) == /\ pc[self] = "ChanSim_"
-                  /\ pc' = [pc EXCEPT ![self] = "A"]
-                  /\ UNCHANGED << S, Timer, droppedMessageRun, ackDue >>
+                  /\ (S[fwChan(self)].in /= 0 /\ S[fwChan(self)].out = 0)
+                  /\ IF droppedMessageRun[self] < MaxDroppedMessageRun
+                        THEN /\ \/ /\ S' = [S EXCEPT ![fwChan(self)].out = S[fwChan(self)].in,
+                                                     ![fwChan(self)].in = 0]
+                                   /\ droppedMessageRun' = [droppedMessageRun EXCEPT ![self] = 0]
+                                \/ /\ S' = [S EXCEPT ![fwChan(self)].in = 0]
+                                   /\ droppedMessageRun' = [droppedMessageRun EXCEPT ![self] = droppedMessageRun[self] + 1]
+                        ELSE /\ droppedMessageRun' = [droppedMessageRun EXCEPT ![self] = 0]
+                             /\ S' = [S EXCEPT ![fwChan(self)].out = S[fwChan(self)].in,
+                                               ![fwChan(self)].in = 0]
+                  /\ Timer' = [Timer EXCEPT ![fwChan(self)] = -1]
+                  /\ pc' = [pc EXCEPT ![self] = "ChanSim_"]
+                  /\ UNCHANGED ackDue
 
-A(self) == /\ pc[self] = "A"
-           /\ Assert(S[fwChan(self)].out = 0, 
-                     "Failure of assertion at line 46, column 7.")
-           /\ S[fwChan(self)].in /= 0
-           /\ IF droppedMessageRun[self] < MaxDroppedMessageRun
-                 THEN /\ \/ /\ S' = [S EXCEPT ![fwChan(self)].out = S[fwChan(self)].in,
-                                              ![fwChan(self)].in = 0]
-                            /\ droppedMessageRun' = [droppedMessageRun EXCEPT ![self] = 0]
-                         \/ /\ S' = [S EXCEPT ![fwChan(self)].in = 0]
-                            /\ droppedMessageRun' = [droppedMessageRun EXCEPT ![self] = droppedMessageRun[self] + 1]
-                 ELSE /\ droppedMessageRun' = [droppedMessageRun EXCEPT ![self] = 0]
-                      /\ S' = [S EXCEPT ![fwChan(self)].out = S[fwChan(self)].in,
-                                        ![fwChan(self)].in = 0]
-           /\ Timer' = [Timer EXCEPT ![fwChan(self)] = -1]
-           /\ pc' = [pc EXCEPT ![self] = "B"]
-           /\ UNCHANGED ackDue
-
-B(self) == /\ pc[self] = "B"
-           /\ S[fwChan(self)].out = 0
-           /\ pc' = [pc EXCEPT ![self] = "ChanSim_"]
-           /\ UNCHANGED << S, Timer, droppedMessageRun, ackDue >>
-
-ChanSim(self) == ChanSim_(self) \/ A(self) \/ B(self)
+ChanSim(self) == ChanSim_(self)
 
 InitChannel(self) == /\ pc[self] = "InitChannel"
                      /\ \/ /\ Assert(S[txChan(self)].in = 0, 
-                                     "Failure of assertion at line 23, column 5 of macro called at line 72, column 7.")
+                                     "Failure of assertion at line 23, column 5 of macro called at line 70, column 7.")
                            /\ S' = [S EXCEPT ![txChan(self)].in = message]
                            /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
                                                      ![self] = 10]
@@ -234,7 +203,7 @@ Idle(self) == /\ pc[self] = "Idle"
               /\ (receive(self) /= 0)
               /\ IF (receive(self) = message)
                     THEN /\ Assert(S[txChan(self)].in = 0, 
-                                   "Failure of assertion at line 23, column 5 of macro called at line 81, column 11.")
+                                   "Failure of assertion at line 23, column 5 of macro called at line 79, column 11.")
                          /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                          /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
                                                    ![self] = 10]
@@ -260,7 +229,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                           /\ (S[txChan(self)].in = 0 \/ receive(self) /= 0)
                           /\ IF (receive(self) = message) /\ (S[txChan(self)].in = 0)
                                 THEN /\ Assert(S[txChan(self)].in = 0, 
-                                               "Failure of assertion at line 23, column 5 of macro called at line 98, column 11.")
+                                               "Failure of assertion at line 23, column 5 of macro called at line 96, column 11.")
                                      /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                                      /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
                                                                ![self] = 10]
@@ -269,17 +238,17 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                 ELSE /\ IF (receive(self) = message)
                                            THEN /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
                                                 /\ ackDue' = [ackDue EXCEPT ![self] = TRUE]
-                                                /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
+                                                /\ pc' = [pc EXCEPT ![self] = "TransmittingData"]
                                                 /\ Timer' = Timer
                                            ELSE /\ IF (S[txChan(self)].in = 0)
                                                       THEN /\ IF ackDue[self]
                                                                  THEN /\ ackDue' = [ackDue EXCEPT ![self] = FALSE]
                                                                       /\ Assert(S[txChan(self)].in = 0, 
-                                                                                "Failure of assertion at line 23, column 5 of macro called at line 107, column 15.")
+                                                                                "Failure of assertion at line 23, column 5 of macro called at line 106, column 15.")
                                                                       /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                                                                       /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
                                                                                                 ![self] = 10]
-                                                                      /\ pc' = [pc EXCEPT ![self] = "t3"]
+                                                                      /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
                                                                  ELSE /\ pc' = [pc EXCEPT ![self] = "AwaitingAck"]
                                                                       /\ UNCHANGED << S, 
                                                                                       Timer, 
@@ -291,11 +260,6 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                           /\ UNCHANGED droppedMessageRun
 
 t2(self) == /\ pc[self] = "t2"
-            /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
-            /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
-            /\ UNCHANGED << Timer, droppedMessageRun, ackDue >>
-
-t3(self) == /\ pc[self] = "t3"
             /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
             /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
             /\ UNCHANGED << Timer, droppedMessageRun, ackDue >>
@@ -320,7 +284,7 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                                 /\ Timer' = Timer
                            ELSE /\ IF (receive(self) = message)
                                       THEN /\ Assert(S[txChan(self)].in = 0, 
-                                                     "Failure of assertion at line 23, column 5 of macro called at line 136, column 11.")
+                                                     "Failure of assertion at line 23, column 5 of macro called at line 134, column 11.")
                                            /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                                            /\ Timer' = [Timer EXCEPT ![txChan(self)] = 2,
                                                                      ![self] = 10]
@@ -336,18 +300,20 @@ t4(self) == /\ pc[self] = "t4"
 
 AckedChannel(self) == InitChannel(self) \/ Idle(self) \/ t1(self)
                          \/ TransmittingAckNotAwaiting(self)
-                         \/ TransmittingData(self) \/ t2(self) \/ t3(self)
+                         \/ TransmittingData(self) \/ t2(self)
                          \/ TransmittingAckAwaitingAck(self)
                          \/ AwaitingAck(self) \/ t4(self)
 
-Next == (\E self \in {"TimerTick"}: TimerTick(self))
-           \/ (\E self \in {"ChanA", "ChanB"}: ChanSim(self))
+Next == (\E self \in {"ChanA", "ChanB"}: ChanSim(self))
            \/ (\E self \in { "SendPing", "PingToPong" }: AckedChannel(self))
+           \/ (* Disjunct to prevent deadlock on termination *)
+              ((\A self \in ProcSet: pc[self] = "Done") /\ UNCHANGED vars)
 
 Spec == /\ Init /\ [][Next]_vars
-        /\ \A self \in {"TimerTick"} : WF_vars(TimerTick(self))
         /\ \A self \in {"ChanA", "ChanB"} : WF_vars(ChanSim(self))
         /\ \A self \in { "SendPing", "PingToPong" } : WF_vars(AckedChannel(self))
+
+Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 
 \* END TRANSLATION
 
@@ -358,5 +324,5 @@ ProgramFinished == pc["SendPing"]="Idle" /\ pc["PingToPong"]="Idle"
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Feb 06 00:17:56 GMT 2020 by mtandy
+\* Last modified Thu Feb 06 01:10:02 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
