@@ -18,11 +18,11 @@
 <stringAttribute key="modelBehaviorNext" value=""/>
 <stringAttribute key="modelBehaviorSpec" value="Spec"/>
 <intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="ackDue, S, pc, droppedMessageRun, Timer"/>
+<stringAttribute key="modelBehaviorVars" value="ackDue, currentMessage, S, Note, pc, remainingSendQueue, initialSendQueue, rxHistory, droppedMessageRun, Timer, resendCounter"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="false"/>
 <listAttribute key="modelCorrectnessInvariants">
-<listEntry value="0ChannelInvariant"/>
+<listEntry value="1NeverRxMoreThanTxInvariant"/>
 </listAttribute>
 <listAttribute key="modelCorrectnessProperties">
 <listEntry value="1&lt;&gt;ProgramFinished"/>
