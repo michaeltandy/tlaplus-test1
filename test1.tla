@@ -16,8 +16,7 @@ define
   rxChan(p) == IF p = "ProcX" THEN "b" ELSE "a"
   receive(p) == S[rxChan(p)].out
   
-  ack == 1
-  message == 2
+  ack == -1
 end define;
 
 macro transmit(toTx, selftimer) begin
@@ -67,29 +66,36 @@ begin ChanSim:
 end process;
 
 fair process AckedChannel \in { "ProcX", "ProcY" }
-  variables ackDue = FALSE, resendCounter = 0;
+  variables ackDue = FALSE,
+  resendCounter = 0,
+  currentMessage = 0,
+  initialSendQueue \in { <<>>, <<1>>, <<1,2,3>> },
+  remainingSendQueue = initialSendQueue;
 begin InitChannel:
-  either
-      transmit(message, TRUE);
-      Note := self\o" transmits at start";
-      goto TransmittingData;
-  or
-      Note := self\o" starts as idle";
-      goto Idle;
-  end either;
+  Note := self\o" starts.";
+  goto Idle;
   
   Idle:
-      assert S[txChan(self)].in = 0;
-      await (receive(self) /= 0);
-      if (receive(self) = message) then
-          Note := self\o" starts ack";
-          transmit(ack, FALSE);
-        t1: S[rxChan(self)].out := 0;
-          goto TransmittingAckNotAwaiting
+      assert resendCounter = 0;
+      if (Len(remainingSendQueue) > 0) then
+          currentMessage := Head(remainingSendQueue);
+          remainingSendQueue := Tail(remainingSendQueue);
+          transmit(currentMessage, TRUE);
+          Note := self\o" transmits new message";
+          goto TransmittingData;
       else
-          Note := self\o" ignores unexepected ack";
-          S[rxChan(self)].out := 0;
-          goto Idle;
+          assert S[txChan(self)].in = 0;
+          await (receive(self) /= 0);
+          if (receive(self) \notin {0, ack} ) then
+              Note := self\o" starts ack";
+              transmit(ack, FALSE);
+            t1: S[rxChan(self)].out := 0;
+              goto TransmittingAckNotAwaiting
+          else
+              Note := self\o" ignores unexepected ack";
+              S[rxChan(self)].out := 0;
+              goto Idle;
+          end if;
       end if;
       
 
@@ -107,12 +113,12 @@ begin InitChannel:
   
   TransmittingData:
       await (S[txChan(self)].in = 0 \/ receive(self) /= 0);
-      if (receive(self) = message) /\ (S[txChan(self)].in = 0) then \* (1) is both-(2)-and-(3)
+      if (receive(self) \notin {0, ack}) /\ (S[txChan(self)].in = 0) then \* (1) is both-(2)-and-(3)
           transmit(ack, FALSE);
           Note := self\o" starts sending ack";
         t2: S[rxChan(self)].out := 0;
           goto TransmittingAckAwaitingAck;
-      elsif (receive(self) = message) then \* (2) Get something that needs an ack
+      elsif (receive(self) \notin {0, ack}) then \* (2) Get something that needs an ack
           S[rxChan(self)].out := 0;
           ackDue := TRUE;
           Note := self\o" receives message, plans ack";
@@ -157,6 +163,7 @@ begin InitChannel:
       end if;
       
   AwaitingAck:
+      assert S[txChan(self)].in = 0;
       await (receive(self) /= 0 \/ Timer[self] = 0);
       if (receive(self) = ack) then
           S[rxChan(self)].out := 0;
@@ -164,11 +171,11 @@ begin InitChannel:
           Note := self\o" receives expected ack";
           goto Idle;
       elsif (Timer[self] = 0) then
-          transmit(message, TRUE);
+          transmit(currentMessage, TRUE);
           resendCounter := resendCounter+1;
           Note := self\o" resends message after timeout";
           goto TransmittingData;
-      elsif (receive(self) = message) then
+      elsif (receive(self) \notin {0, ack}) then
           transmit(ack, FALSE);
         t4: S[rxChan(self)].out := 0;
           Note := self\o" receives message, starts sending ack";
@@ -182,8 +189,8 @@ end process
 end algorithm *)
 
 \* BEGIN TRANSLATION
-\* Label TimerTick of process TimerTick at line 36 col 8 changed to TimerTick_
-\* Label ChanSim of process ChanSim at line 53 col 7 changed to ChanSim_
+\* Label TimerTick of process TimerTick at line 34 col 8 changed to TimerTick_
+\* Label ChanSim of process ChanSim at line 45 col 7 changed to ChanSim_
 VARIABLES S, Timer, Note, pc
 
 (* define statement *)
@@ -192,12 +199,13 @@ txChan(p) == IF p = "ProcX" THEN "a" ELSE "b"
 rxChan(p) == IF p = "ProcX" THEN "b" ELSE "a"
 receive(p) == S[rxChan(p)].out
 
-ack == 1
-message == 2
+ack == -1
 
-VARIABLES droppedMessageRun, ackDue, resendCounter
+VARIABLES droppedMessageRun, ackDue, resendCounter, currentMessage, 
+          initialSendQueue, remainingSendQueue
 
-vars == << S, Timer, Note, pc, droppedMessageRun, ackDue, resendCounter >>
+vars == << S, Timer, Note, pc, droppedMessageRun, ackDue, resendCounter, 
+           currentMessage, initialSendQueue, remainingSendQueue >>
 
 ProcSet == ({"TimerTick"}) \cup ({"ChanA", "ChanB"}) \cup ({ "ProcX", "ProcY" })
 
@@ -210,6 +218,9 @@ Init == (* Global variables *)
         (* Process AckedChannel *)
         /\ ackDue = [self \in { "ProcX", "ProcY" } |-> FALSE]
         /\ resendCounter = [self \in { "ProcX", "ProcY" } |-> 0]
+        /\ currentMessage = [self \in { "ProcX", "ProcY" } |-> 0]
+        /\ initialSendQueue \in [{ "ProcX", "ProcY" } -> { <<>>, <<1>>, <<1,2,3>> }]
+        /\ remainingSendQueue = [self \in { "ProcX", "ProcY" } |-> initialSendQueue[self]]
         /\ pc = [self \in ProcSet |-> CASE self \in {"TimerTick"} -> "TimerTick_"
                                         [] self \in {"ChanA", "ChanB"} -> "ChanSim_"
                                         [] self \in { "ProcX", "ProcY" } -> "InitChannel"]
@@ -225,7 +236,8 @@ TimerTick_(self) == /\ pc[self] = "TimerTick_"
                     /\ Note' = "Time passes"
                     /\ pc' = [pc EXCEPT ![self] = "TimerTick_"]
                     /\ UNCHANGED << S, droppedMessageRun, ackDue, 
-                                    resendCounter >>
+                                    resendCounter, currentMessage, 
+                                    initialSendQueue, remainingSendQueue >>
 
 TimerTick(self) == TimerTick_(self)
 
@@ -245,50 +257,60 @@ ChanSim_(self) == /\ pc[self] = "ChanSim_"
                              /\ Note' = self\o" message delivered"
                   /\ Timer' = [Timer EXCEPT ![fwChan(self)] = -1]
                   /\ pc' = [pc EXCEPT ![self] = "ChanSim_"]
-                  /\ UNCHANGED << ackDue, resendCounter >>
+                  /\ UNCHANGED << ackDue, resendCounter, currentMessage, 
+                                  initialSendQueue, remainingSendQueue >>
 
 ChanSim(self) == ChanSim_(self)
 
 InitChannel(self) == /\ pc[self] = "InitChannel"
-                     /\ \/ /\ Assert(S[txChan(self)].in = 0, 
-                                     "Failure of assertion at line 24, column 5 of macro called at line 80, column 7.")
-                           /\ S' = [S EXCEPT ![txChan(self)].in = message]
-                           /\ IF TRUE
-                                 THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
-                                                                ![self] = 3]
-                                 ELSE /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1]
-                           /\ Note' = self\o" transmits at start"
-                           /\ pc' = [pc EXCEPT ![self] = "TransmittingData"]
-                        \/ /\ Note' = self\o" starts as idle"
-                           /\ pc' = [pc EXCEPT ![self] = "Idle"]
-                           /\ UNCHANGED <<S, Timer>>
-                     /\ UNCHANGED << droppedMessageRun, ackDue, resendCounter >>
+                     /\ Note' = self\o" starts."
+                     /\ pc' = [pc EXCEPT ![self] = "Idle"]
+                     /\ UNCHANGED << S, Timer, droppedMessageRun, ackDue, 
+                                     resendCounter, currentMessage, 
+                                     initialSendQueue, remainingSendQueue >>
 
 Idle(self) == /\ pc[self] = "Idle"
-              /\ Assert(S[txChan(self)].in = 0, 
-                        "Failure of assertion at line 89, column 7.")
-              /\ (receive(self) /= 0)
-              /\ IF (receive(self) = message)
-                    THEN /\ Note' = self\o" starts ack"
+              /\ Assert(resendCounter[self] = 0, 
+                        "Failure of assertion at line 79, column 7.")
+              /\ IF (Len(remainingSendQueue[self]) > 0)
+                    THEN /\ currentMessage' = [currentMessage EXCEPT ![self] = Head(remainingSendQueue[self])]
+                         /\ remainingSendQueue' = [remainingSendQueue EXCEPT ![self] = Tail(remainingSendQueue[self])]
                          /\ Assert(S[txChan(self)].in = 0, 
-                                   "Failure of assertion at line 24, column 5 of macro called at line 93, column 11.")
-                         /\ S' = [S EXCEPT ![txChan(self)].in = ack]
-                         /\ IF FALSE
+                                   "Failure of assertion at line 23, column 5 of macro called at line 83, column 11.")
+                         /\ S' = [S EXCEPT ![txChan(self)].in = currentMessage'[self]]
+                         /\ IF TRUE
                                THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
                                                               ![self] = 3]
                                ELSE /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1]
-                         /\ pc' = [pc EXCEPT ![self] = "t1"]
-                    ELSE /\ Note' = self\o" ignores unexepected ack"
-                         /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
-                         /\ pc' = [pc EXCEPT ![self] = "Idle"]
-                         /\ Timer' = Timer
-              /\ UNCHANGED << droppedMessageRun, ackDue, resendCounter >>
+                         /\ Note' = self\o" transmits new message"
+                         /\ pc' = [pc EXCEPT ![self] = "TransmittingData"]
+                    ELSE /\ Assert(S[txChan(self)].in = 0, 
+                                   "Failure of assertion at line 87, column 11.")
+                         /\ (receive(self) /= 0)
+                         /\ IF (receive(self) \notin {0, ack} )
+                               THEN /\ Note' = self\o" starts ack"
+                                    /\ Assert(S[txChan(self)].in = 0, 
+                                              "Failure of assertion at line 23, column 5 of macro called at line 91, column 15.")
+                                    /\ S' = [S EXCEPT ![txChan(self)].in = ack]
+                                    /\ IF FALSE
+                                          THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
+                                                                         ![self] = 3]
+                                          ELSE /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1]
+                                    /\ pc' = [pc EXCEPT ![self] = "t1"]
+                               ELSE /\ Note' = self\o" ignores unexepected ack"
+                                    /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
+                                    /\ pc' = [pc EXCEPT ![self] = "Idle"]
+                                    /\ Timer' = Timer
+                         /\ UNCHANGED << currentMessage, remainingSendQueue >>
+              /\ UNCHANGED << droppedMessageRun, ackDue, resendCounter, 
+                              initialSendQueue >>
 
 t1(self) == /\ pc[self] = "t1"
             /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
             /\ pc' = [pc EXCEPT ![self] = "TransmittingAckNotAwaiting"]
             /\ UNCHANGED << Timer, Note, droppedMessageRun, ackDue, 
-                            resendCounter >>
+                            resendCounter, currentMessage, initialSendQueue, 
+                            remainingSendQueue >>
 
 TransmittingAckNotAwaiting(self) == /\ pc[self] = "TransmittingAckNotAwaiting"
                                     /\ (S[txChan(self)].in = 0)
@@ -296,7 +318,10 @@ TransmittingAckNotAwaiting(self) == /\ pc[self] = "TransmittingAckNotAwaiting"
                                     /\ Note' = self\o" finishes sending ack"
                                     /\ pc' = [pc EXCEPT ![self] = "Idle"]
                                     /\ UNCHANGED << S, droppedMessageRun, 
-                                                    ackDue, resendCounter >>
+                                                    ackDue, resendCounter, 
+                                                    currentMessage, 
+                                                    initialSendQueue, 
+                                                    remainingSendQueue >>
 
 FinishingUnnecessaryResend(self) == /\ pc[self] = "FinishingUnnecessaryResend"
                                     /\ (S[txChan(self)].in = 0)
@@ -304,13 +329,16 @@ FinishingUnnecessaryResend(self) == /\ pc[self] = "FinishingUnnecessaryResend"
                                     /\ Note' = self\o" finishes unnecessary resend"
                                     /\ pc' = [pc EXCEPT ![self] = "Idle"]
                                     /\ UNCHANGED << S, droppedMessageRun, 
-                                                    ackDue, resendCounter >>
+                                                    ackDue, resendCounter, 
+                                                    currentMessage, 
+                                                    initialSendQueue, 
+                                                    remainingSendQueue >>
 
 TransmittingData(self) == /\ pc[self] = "TransmittingData"
                           /\ (S[txChan(self)].in = 0 \/ receive(self) /= 0)
-                          /\ IF (receive(self) = message) /\ (S[txChan(self)].in = 0)
+                          /\ IF (receive(self) \notin {0, ack}) /\ (S[txChan(self)].in = 0)
                                 THEN /\ Assert(S[txChan(self)].in = 0, 
-                                               "Failure of assertion at line 24, column 5 of macro called at line 118, column 11.")
+                                               "Failure of assertion at line 23, column 5 of macro called at line 117, column 11.")
                                      /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                                      /\ IF FALSE
                                            THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
@@ -319,7 +347,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                      /\ Note' = self\o" starts sending ack"
                                      /\ pc' = [pc EXCEPT ![self] = "t2"]
                                      /\ UNCHANGED << ackDue, resendCounter >>
-                                ELSE /\ IF (receive(self) = message)
+                                ELSE /\ IF (receive(self) \notin {0, ack})
                                            THEN /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
                                                 /\ ackDue' = [ackDue EXCEPT ![self] = TRUE]
                                                 /\ Note' = self\o" receives message, plans ack"
@@ -330,7 +358,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                                       THEN /\ IF ackDue[self]
                                                                  THEN /\ ackDue' = [ackDue EXCEPT ![self] = FALSE]
                                                                       /\ Assert(S[txChan(self)].in = 0, 
-                                                                                "Failure of assertion at line 24, column 5 of macro called at line 130, column 15.")
+                                                                                "Failure of assertion at line 23, column 5 of macro called at line 129, column 15.")
                                                                       /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                                                                       /\ IF FALSE
                                                                             THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
@@ -355,20 +383,22 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                                                                  /\ pc' = [pc EXCEPT ![self] = "TransmittingData"]
                                                                                  /\ UNCHANGED resendCounter
                                                                  ELSE /\ Assert((FALSE), 
-                                                                                "Failure of assertion at line 148, column 11.")
+                                                                                "Failure of assertion at line 147, column 11.")
                                                                       /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
                                                                       /\ UNCHANGED << S, 
                                                                                       Note, 
                                                                                       resendCounter >>
                                                            /\ UNCHANGED << Timer, 
                                                                            ackDue >>
-                          /\ UNCHANGED droppedMessageRun
+                          /\ UNCHANGED << droppedMessageRun, currentMessage, 
+                                          initialSendQueue, remainingSendQueue >>
 
 t2(self) == /\ pc[self] = "t2"
             /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
             /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
             /\ UNCHANGED << Timer, Note, droppedMessageRun, ackDue, 
-                            resendCounter >>
+                            resendCounter, currentMessage, initialSendQueue, 
+                            remainingSendQueue >>
 
 TransmittingAckAwaitingAck(self) == /\ pc[self] = "TransmittingAckAwaitingAck"
                                     /\ (S[txChan(self)].in = 0 \/ receive(self) = ack)
@@ -381,15 +411,19 @@ TransmittingAckAwaitingAck(self) == /\ pc[self] = "TransmittingAckAwaitingAck"
                                                      THEN /\ Note' = self\o" completes transmission of ack"
                                                           /\ pc' = [pc EXCEPT ![self] = "AwaitingAck"]
                                                      ELSE /\ Assert((FALSE), 
-                                                                    "Failure of assertion at line 163, column 11.")
+                                                                    "Failure of assertion at line 162, column 11.")
                                                           /\ pc' = [pc EXCEPT ![self] = "AwaitingAck"]
                                                           /\ Note' = Note
                                                /\ UNCHANGED << S, 
                                                                resendCounter >>
                                     /\ UNCHANGED << Timer, droppedMessageRun, 
-                                                    ackDue >>
+                                                    ackDue, currentMessage, 
+                                                    initialSendQueue, 
+                                                    remainingSendQueue >>
 
 AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
+                     /\ Assert(S[txChan(self)].in = 0, 
+                               "Failure of assertion at line 166, column 7.")
                      /\ (receive(self) /= 0 \/ Timer[self] = 0)
                      /\ IF (receive(self) = ack)
                            THEN /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
@@ -399,8 +433,8 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                                 /\ Timer' = Timer
                            ELSE /\ IF (Timer[self] = 0)
                                       THEN /\ Assert(S[txChan(self)].in = 0, 
-                                                     "Failure of assertion at line 24, column 5 of macro called at line 174, column 11.")
-                                           /\ S' = [S EXCEPT ![txChan(self)].in = message]
+                                                     "Failure of assertion at line 23, column 5 of macro called at line 174, column 11.")
+                                           /\ S' = [S EXCEPT ![txChan(self)].in = currentMessage[self]]
                                            /\ IF TRUE
                                                  THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
                                                                                 ![self] = 3]
@@ -408,9 +442,9 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                                            /\ resendCounter' = [resendCounter EXCEPT ![self] = resendCounter[self]+1]
                                            /\ Note' = self\o" resends message after timeout"
                                            /\ pc' = [pc EXCEPT ![self] = "TransmittingData"]
-                                      ELSE /\ IF (receive(self) = message)
+                                      ELSE /\ IF (receive(self) \notin {0, ack})
                                                  THEN /\ Assert(S[txChan(self)].in = 0, 
-                                                                "Failure of assertion at line 24, column 5 of macro called at line 179, column 11.")
+                                                                "Failure of assertion at line 23, column 5 of macro called at line 179, column 11.")
                                                       /\ S' = [S EXCEPT ![txChan(self)].in = ack]
                                                       /\ IF FALSE
                                                             THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 1,
@@ -422,13 +456,16 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                                                       /\ pc' = [pc EXCEPT ![self] = "Done"]
                                                       /\ UNCHANGED << S, Timer >>
                                            /\ UNCHANGED << Note, resendCounter >>
-                     /\ UNCHANGED << droppedMessageRun, ackDue >>
+                     /\ UNCHANGED << droppedMessageRun, ackDue, currentMessage, 
+                                     initialSendQueue, remainingSendQueue >>
 
 t4(self) == /\ pc[self] = "t4"
             /\ S' = [S EXCEPT ![rxChan(self)].out = 0]
             /\ Note' = self\o" receives message, starts sending ack"
             /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
-            /\ UNCHANGED << Timer, droppedMessageRun, ackDue, resendCounter >>
+            /\ UNCHANGED << Timer, droppedMessageRun, ackDue, resendCounter, 
+                            currentMessage, initialSendQueue, 
+                            remainingSendQueue >>
 
 AckedChannel(self) == InitChannel(self) \/ Idle(self) \/ t1(self)
                          \/ TransmittingAckNotAwaiting(self)
@@ -455,9 +492,10 @@ Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 ChannelInvariant == (S.a.in = 0 \/ S.a.out = 0) /\ (S.b.in = 0 \/ S.b.out = 0)
 
 ProgramFinished == pc["ProcX"]="Idle" /\ pc["ProcY"]="Idle"
+                   /\ Len(remainingSendQueue["ProcX"]) = 0 /\ Len(remainingSendQueue["ProcY"]) = 0
 \*ProgramFinished == pc["SendPing"]="Done"
 
 =============================================================================
 \* Modification History
-\* Last modified Sat Feb 08 16:16:51 GMT 2020 by mtandy
+\* Last modified Sat Feb 08 17:56:31 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
