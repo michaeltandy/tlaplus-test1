@@ -68,7 +68,7 @@ fair process AckedChannel \in { "ProcX", "ProcY" }
   resendCounter = 0,
   currentMessage = 0,
   lastRx = 0,
-  initialSendQueue \in { <<>>, <<1>>, <<1,2>> },
+  initialSendQueue \in { (*<<>>, <<1>>,*) <<1,2>> },
   remainingSendQueue = initialSendQueue,
   rxHistory = <<>>;
 begin InitChannel:
@@ -261,7 +261,7 @@ Init == (* Global variables *)
         /\ resendCounter = [self \in { "ProcX", "ProcY" } |-> 0]
         /\ currentMessage = [self \in { "ProcX", "ProcY" } |-> 0]
         /\ lastRx = [self \in { "ProcX", "ProcY" } |-> 0]
-        /\ initialSendQueue \in [{ "ProcX", "ProcY" } -> { <<>>, <<1>>, <<1,2>> }]
+        /\ initialSendQueue \in [{ "ProcX", "ProcY" } -> {                  <<1,2>> }]
         /\ remainingSendQueue = [self \in { "ProcX", "ProcY" } |-> initialSendQueue[self]]
         /\ rxHistory = [self \in { "ProcX", "ProcY" } |-> <<>>]
         /\ pc = [self \in ProcSet |-> CASE self \in {"TimerTick"} -> "TimerTick_"
@@ -575,11 +575,14 @@ AckedChannel(self) == InitChannel(self) \/ Idle(self) \/ t1(self)
                          \/ TransmittingAckAwaitingAck(self)
                          \/ AwaitingAck(self) \/ t4(self)
 
+(* Allow infinite stuttering to prevent deadlock on termination. *)
+Terminating == /\ \A self \in ProcSet: pc[self] = "Done"
+               /\ UNCHANGED vars
+
 Next == (\E self \in {"TimerTick"}: TimerTick(self))
            \/ (\E self \in {"ChanA", "ChanB"}: ChanSim(self))
            \/ (\E self \in { "ProcX", "ProcY" }: AckedChannel(self))
-           \/ (* Disjunct to prevent deadlock on termination *)
-              ((\A self \in ProcSet: pc[self] = "Done") /\ UNCHANGED vars)
+           \/ Terminating
 
 Spec == /\ Init /\ [][Next]_vars
         /\ \A self \in {"TimerTick"} : WF_vars(TimerTick(self))
@@ -603,5 +606,5 @@ ProgramFinished == pc["ProcX"]="Idle" /\ pc["ProcY"]="Idle"
 
 =============================================================================
 \* Modification History
-\* Last modified Sun Feb 09 13:09:57 GMT 2020 by mtandy
+\* Last modified Mon Feb 10 08:08:22 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
