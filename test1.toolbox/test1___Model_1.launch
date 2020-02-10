@@ -11,14 +11,14 @@
 <stringAttribute key="distributedTLCVMArgs" value=""/>
 <intAttribute key="fpBits" value="1"/>
 <intAttribute key="fpIndex" value="1"/>
-<intAttribute key="maxHeapSize" value="25"/>
+<intAttribute key="maxHeapSize" value="50"/>
 <intAttribute key="maxSetSize" value="1000000"/>
 <booleanAttribute key="mcMode" value="true"/>
 <stringAttribute key="modelBehaviorInit" value=""/>
 <stringAttribute key="modelBehaviorNext" value=""/>
 <stringAttribute key="modelBehaviorSpec" value="Spec"/>
 <intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="ackDue, currentMessage, S, Note, pc, remainingSendQueue, initialSendQueue, rxHistory, droppedMessageRun, Timer, resendCounter"/>
+<stringAttribute key="modelBehaviorVars" value="ackDue, currentMessage, S, Note, pc, remainingSendQueue, droppedMessagesRemaining, lastRx, initialSendQueue, rxHistory, Timer, resendCounter"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="false"/>
 <listAttribute key="modelCorrectnessInvariants">
@@ -30,7 +30,7 @@
 <stringAttribute key="modelExpressionEval" value=""/>
 <stringAttribute key="modelParameterActionConstraint" value=""/>
 <listAttribute key="modelParameterConstants">
-<listEntry value="MaxDroppedMessageRun;;0;0;0"/>
+<listEntry value="droppedMessageLimit;;0;0;0"/>
 </listAttribute>
 <stringAttribute key="modelParameterContraint" value=""/>
 <listAttribute key="modelParameterDefinitions"/>
