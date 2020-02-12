@@ -25,6 +25,7 @@
 <listEntry value="1NeverRxMoreThanTxInvariant"/>
 <listEntry value="1NeverDropMoreThanSentInvariant"/>
 <listEntry value="1MessageDropsPerTransportDropInvariant"/>
+<listEntry value="0NeverStarvedInvariant"/>
 </listAttribute>
 <listAttribute key="modelCorrectnessProperties">
 <listEntry value="1&lt;&gt;ProgramFinished"/>
@@ -32,7 +33,7 @@
 <stringAttribute key="modelExpressionEval" value=""/>
 <stringAttribute key="modelParameterActionConstraint" value=""/>
 <listAttribute key="modelParameterConstants">
-<listEntry value="droppedMessageLimit;;4;0;0"/>
+<listEntry value="droppedMessageLimit;;3;0;0"/>
 </listAttribute>
 <stringAttribute key="modelParameterContraint" value=""/>
 <listAttribute key="modelParameterDefinitions"/>

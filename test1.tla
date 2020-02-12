@@ -73,14 +73,22 @@ fair process AckedChannel \in { "ProcX", "ProcY" }
   currentMessage = 0,
   lastRx = 0,
   unackedMessageCount = 0,
-  initialSendQueue \in { <<>>, <<1>>, <<1,2>> },
+  initialSendQueue \in { <<>>, <<1>>, <<1,2>>, <<1,2,3,4>> },
   \*initialSendQueue = (IF self = "ProcX" THEN <<1>> ELSE <<1,2>>), 
   \*initialSendQueue = <<1,2>>,
   remainingSendQueue = initialSendQueue,
   rxHistory = <<>>;
 begin InitChannel:
-  Note := self\o" starts.";
-  goto Idle;
+  if (receive(self) > 0) then
+    rxHistory := Append(rxHistory, receive(self));
+    lastRx := receive(self);
+    Note := self\o" acks at startup";
+    transmit(-lastRx, FALSE, TRUE);
+    goto TransmittingAckNotAwaiting
+  else
+    Note := self\o" starts.";
+    goto Idle;
+  end if;
   
   Idle:
       assert resendCounter = 0;
@@ -176,7 +184,6 @@ begin InitChannel:
       
   
   TransmittingAckAwaitingAck:
-      \*assert S[txChan(self)].in < 0;
       await (S[txChan(self)].in = 0 \/ receive(self) < 0);
       if (receive(self) < 0) then
           if (receive(self) = -currentMessage) then
@@ -286,7 +293,7 @@ Init == (* Global variables *)
         /\ currentMessage = [self \in { "ProcX", "ProcY" } |-> 0]
         /\ lastRx = [self \in { "ProcX", "ProcY" } |-> 0]
         /\ unackedMessageCount = [self \in { "ProcX", "ProcY" } |-> 0]
-        /\ initialSendQueue \in [{ "ProcX", "ProcY" } -> { <<>>, <<1>>, <<1,2>> }]
+        /\ initialSendQueue \in [{ "ProcX", "ProcY" } -> { <<>>, <<1>>, <<1,2>>, <<1,2,3,4>> }]
         /\ remainingSendQueue = [self \in { "ProcX", "ProcY" } |-> initialSendQueue[self]]
         /\ rxHistory = [self \in { "ProcX", "ProcY" } |-> <<>>]
         /\ pc = [self \in ProcSet |-> CASE self \in {"TimerTick"} -> "TimerTick_"
@@ -334,24 +341,39 @@ ChanSim_(self) == /\ pc[self] = "ChanSim_"
 ChanSim(self) == ChanSim_(self)
 
 InitChannel(self) == /\ pc[self] = "InitChannel"
-                     /\ Note' = self\o" starts."
-                     /\ pc' = [pc EXCEPT ![self] = "Idle"]
-                     /\ UNCHANGED << S, Timer, droppedMessagesRemaining, 
-                                     ackDue, resendCounter, currentMessage, 
-                                     lastRx, unackedMessageCount, 
-                                     initialSendQueue, remainingSendQueue, 
-                                     rxHistory >>
+                     /\ IF (receive(self) > 0)
+                           THEN /\ rxHistory' = [rxHistory EXCEPT ![self] = Append(rxHistory[self], receive(self))]
+                                /\ lastRx' = [lastRx EXCEPT ![self] = receive(self)]
+                                /\ Note' = self\o" acks at startup"
+                                /\ Assert(S[txChan(self)].in = 0, 
+                                          "Failure of assertion at line 24, column 5 of macro called at line 86, column 5.")
+                                /\ IF TRUE
+                                      THEN /\ S' = [S EXCEPT ![txChan(self)].in = -lastRx'[self],
+                                                             ![rxChan(self)].out = 0]
+                                      ELSE /\ S' = [S EXCEPT ![txChan(self)].in = -lastRx'[self]]
+                                /\ IF FALSE
+                                      THEN /\ Timer' = [Timer EXCEPT ![txChan(self)] = 0,
+                                                                     ![self] = 1]
+                                      ELSE /\ Timer' = [Timer EXCEPT ![txChan(self)] = 0]
+                                /\ pc' = [pc EXCEPT ![self] = "TransmittingAckNotAwaiting"]
+                           ELSE /\ Note' = self\o" starts."
+                                /\ pc' = [pc EXCEPT ![self] = "Idle"]
+                                /\ UNCHANGED << S, Timer, lastRx, rxHistory >>
+                     /\ UNCHANGED << droppedMessagesRemaining, ackDue, 
+                                     resendCounter, currentMessage, 
+                                     unackedMessageCount, initialSendQueue, 
+                                     remainingSendQueue >>
 
 Idle(self) == /\ pc[self] = "Idle"
               /\ Assert(resendCounter[self] = 0, 
-                        "Failure of assertion at line 86, column 7.")
+                        "Failure of assertion at line 94, column 7.")
               /\ Assert(Timer[self] = -1, 
-                        "Failure of assertion at line 87, column 7.")
+                        "Failure of assertion at line 95, column 7.")
               /\ IF (Len(remainingSendQueue[self]) > 0)
                     THEN /\ currentMessage' = [currentMessage EXCEPT ![self] = Head(remainingSendQueue[self])]
                          /\ remainingSendQueue' = [remainingSendQueue EXCEPT ![self] = Tail(remainingSendQueue[self])]
                          /\ Assert(S[txChan(self)].in = 0, 
-                                   "Failure of assertion at line 24, column 5 of macro called at line 91, column 11.")
+                                   "Failure of assertion at line 24, column 5 of macro called at line 99, column 11.")
                          /\ IF FALSE
                                THEN /\ S' = [S EXCEPT ![txChan(self)].in = currentMessage'[self],
                                                       ![rxChan(self)].out = 0]
@@ -364,7 +386,7 @@ Idle(self) == /\ pc[self] = "Idle"
                          /\ pc' = [pc EXCEPT ![self] = "TransmittingData"]
                          /\ UNCHANGED << lastRx, rxHistory >>
                     ELSE /\ Assert(S[txChan(self)].in = 0, 
-                                   "Failure of assertion at line 95, column 11.")
+                                   "Failure of assertion at line 103, column 11.")
                          /\ (receive(self) /= 0)
                          /\ IF (receive(self) > 0)
                                THEN /\ IF (lastRx[self] /= receive(self))
@@ -375,7 +397,7 @@ Idle(self) == /\ pc[self] = "Idle"
                                                /\ UNCHANGED << lastRx, 
                                                                rxHistory >>
                                     /\ Assert(S[txChan(self)].in = 0, 
-                                              "Failure of assertion at line 24, column 5 of macro called at line 105, column 15.")
+                                              "Failure of assertion at line 24, column 5 of macro called at line 113, column 15.")
                                     /\ IF TRUE
                                           THEN /\ S' = [S EXCEPT ![txChan(self)].in = -lastRx'[self],
                                                                  ![rxChan(self)].out = 0]
@@ -432,7 +454,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                                 /\ UNCHANGED << lastRx, 
                                                                 rxHistory >>
                                      /\ Assert(S[txChan(self)].in = 0, 
-                                               "Failure of assertion at line 24, column 5 of macro called at line 137, column 11.")
+                                               "Failure of assertion at line 24, column 5 of macro called at line 145, column 11.")
                                      /\ IF TRUE
                                            THEN /\ S' = [S EXCEPT ![txChan(self)].in = -lastRx'[self],
                                                                   ![rxChan(self)].out = 0]
@@ -460,7 +482,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                                       THEN /\ IF ackDue[self]
                                                                  THEN /\ ackDue' = [ackDue EXCEPT ![self] = FALSE]
                                                                       /\ Assert(S[txChan(self)].in = 0, 
-                                                                                "Failure of assertion at line 24, column 5 of macro called at line 153, column 15.")
+                                                                                "Failure of assertion at line 24, column 5 of macro called at line 161, column 15.")
                                                                       /\ IF FALSE
                                                                             THEN /\ S' = [S EXCEPT ![txChan(self)].in = -lastRx[self],
                                                                                                    ![rxChan(self)].out = 0]
@@ -486,7 +508,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                                                                  /\ S' = S
                                                                             ELSE /\ IF (receive(self) = -currentMessage[self])
                                                                                        THEN /\ Assert((FALSE), 
-                                                                                                      "Failure of assertion at line 167, column 15.")
+                                                                                                      "Failure of assertion at line 175, column 15.")
                                                                                             /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
                                                                                             /\ UNCHANGED << S, 
                                                                                                             Note >>
@@ -496,7 +518,7 @@ TransmittingData(self) == /\ pc[self] = "TransmittingData"
                                                                                  /\ UNCHANGED << Timer, 
                                                                                                  resendCounter >>
                                                                  ELSE /\ Assert((FALSE), 
-                                                                                "Failure of assertion at line 174, column 11.")
+                                                                                "Failure of assertion at line 182, column 11.")
                                                                       /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
                                                                       /\ UNCHANGED << S, 
                                                                                       Timer, 
@@ -533,7 +555,7 @@ TransmittingAckAwaitingAck(self) == /\ pc[self] = "TransmittingAckAwaitingAck"
                                                      THEN /\ Note' = self\o" completes transmission of ack"
                                                           /\ pc' = [pc EXCEPT ![self] = "AwaitingAck"]
                                                      ELSE /\ Assert((FALSE), 
-                                                                    "Failure of assertion at line 207, column 11.")
+                                                                    "Failure of assertion at line 214, column 11.")
                                                           /\ pc' = [pc EXCEPT ![self] = "AwaitingAck"]
                                                           /\ Note' = Note
                                                /\ UNCHANGED << S, Timer, 
@@ -548,7 +570,7 @@ TransmittingAckAwaitingAck(self) == /\ pc[self] = "TransmittingAckAwaitingAck"
 
 AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                      /\ Assert(S[txChan(self)].in = 0, 
-                               "Failure of assertion at line 211, column 7.")
+                               "Failure of assertion at line 218, column 7.")
                      /\ (receive(self) /= 0 \/ Timer[self] = 0)
                      /\ IF (receive(self) < 0)
                            THEN /\ IF (receive(self) = -currentMessage[self])
@@ -567,7 +589,7 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                            ELSE /\ IF (Timer[self] = 0)
                                       THEN /\ IF (resendCounter[self] < 3)
                                                  THEN /\ Assert(S[txChan(self)].in = 0, 
-                                                                "Failure of assertion at line 24, column 5 of macro called at line 227, column 15.")
+                                                                "Failure of assertion at line 24, column 5 of macro called at line 234, column 15.")
                                                       /\ IF FALSE
                                                             THEN /\ S' = [S EXCEPT ![txChan(self)].in = currentMessage[self],
                                                                                    ![rxChan(self)].out = 0]
@@ -596,7 +618,7 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                                                                  /\ UNCHANGED << lastRx, 
                                                                                  rxHistory >>
                                                       /\ Assert(S[txChan(self)].in = 0, 
-                                                                "Failure of assertion at line 24, column 5 of macro called at line 246, column 11.")
+                                                                "Failure of assertion at line 24, column 5 of macro called at line 253, column 11.")
                                                       /\ IF TRUE
                                                             THEN /\ S' = [S EXCEPT ![txChan(self)].in = -lastRx'[self],
                                                                                    ![rxChan(self)].out = 0]
@@ -607,7 +629,7 @@ AwaitingAck(self) == /\ pc[self] = "AwaitingAck"
                                                             ELSE /\ Timer' = [Timer EXCEPT ![txChan(self)] = 0]
                                                       /\ pc' = [pc EXCEPT ![self] = "TransmittingAckAwaitingAck"]
                                                  ELSE /\ Assert((FALSE), 
-                                                                "Failure of assertion at line 249, column 11.")
+                                                                "Failure of assertion at line 256, column 11.")
                                                       /\ pc' = [pc EXCEPT ![self] = "Done"]
                                                       /\ UNCHANGED << S, Timer, 
                                                                       Note, 
@@ -651,6 +673,12 @@ NeverDropMoreThanSentInvariant == unackedMessageCount["ProcY"] <= Len(initialSen
 
 MessageDropsPerTransportDropInvariant == ((3*unackedMessageCount["ProcX"] + 3*unackedMessageCount["ProcY"]) <= droppedMessageLimit)
 
+NeverStarvedInvariant == IF (Len(initialSendQueue["ProcX"]) >= 3 /\ Len(initialSendQueue["ProcY"]) >= 3)
+                          THEN IF (Len(remainingSendQueue["ProcX"]) >= 3) THEN
+                                  (Len(remainingSendQueue["ProcY"]) /= 0)
+                              ELSE TRUE
+                          ELSE TRUE
+
 ProgramFinished == pc["ProcX"]="Idle" /\ pc["ProcY"]="Idle"
                    /\ Len(remainingSendQueue["ProcX"]) = 0 /\ Len(remainingSendQueue["ProcY"]) = 0
                    /\ Len(rxHistory["ProcX"]) >= Len(initialSendQueue["ProcY"])-unackedMessageCount["ProcY"]
@@ -659,5 +687,5 @@ ProgramFinished == pc["ProcX"]="Idle" /\ pc["ProcY"]="Idle"
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Feb 12 21:42:39 GMT 2020 by mtandy
+\* Last modified Wed Feb 12 22:33:04 GMT 2020 by mtandy
 \* Created Tue Jan 28 23:30:18 GMT 2020 by mtandy
